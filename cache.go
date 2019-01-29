@@ -178,9 +178,9 @@ func cachePage(store persistence.CacheStore, expire time.Duration, handle gin.Ha
 }
 
 // CachePage Decorator with expire date as a function
-func CachePageWithDurationFn(store persistence.CacheStore, expireFn func() time.Duration, handle gin.HandlerFunc) gin.HandlerFunc {
+func CachePageWithDurationFn(store persistence.CacheStore, expireFn func(c *gin.Context) time.Duration, handle gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		expire := expireFn()
+		expire := expireFn(c)
 		cachePage(store, expire, handle, c)
 	}
 }
