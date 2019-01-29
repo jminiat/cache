@@ -149,8 +149,7 @@ func SiteCache(store persistence.CacheStore, expire time.Duration) gin.HandlerFu
 }
 
 // CachePage Decorator
-func CachePage(store persistence.CacheStore, expire time.Duration, handle gin.HandlerFunc) gin.HandlerFunc {
-	return func(c *gin.Context) {
+func cachePage(store persistence.CacheStore, expire time.Duration, handle gin.HandlerFunc, c *gin.Context) {
 		var cache responseCache
 		url := c.Request.URL
 		key := CreateKey(url.RequestURI())
@@ -176,6 +175,20 @@ func CachePage(store persistence.CacheStore, expire time.Duration, handle gin.Ha
 			}
 			c.Writer.Write(cache.Data)
 		}
+}
+
+// CachePage Decorator with expire date as a function
+func CachePageWithDurationFn(store persistence.CacheStore, expireFn func() time.Duration, handle gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		expire := expireFn()
+		cachePage(store, expire, handle, c)
+	}
+}
+
+// CachePage Decorator
+func CachePage(store persistence.CacheStore, expire time.Duration, handle gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		cachePage(store, expire, handle, c)
 	}
 }
 
