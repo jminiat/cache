@@ -3,13 +3,13 @@ package cache
 import (
 	"bytes"
 	"crypto/sha1"
+	"encoding/gob"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"sync"
 	"time"
-	"encoding/gob"
 
 	"github.com/gin-contrib/cache/persistence"
 	"github.com/gin-gonic/gin"
@@ -149,46 +149,55 @@ func SiteCache(store persistence.CacheStore, expire time.Duration) gin.HandlerFu
 }
 
 // CachePage Decorator
-func cachePage(store persistence.CacheStore, expire time.Duration, handle gin.HandlerFunc, c *gin.Context) {
-		var cache responseCache
-		url := c.Request.URL
-		key := CreateKey(url.RequestURI())
-		if err := store.Get(key, &cache); err != nil {
-			if err != persistence.ErrCacheMiss {
-				log.Println(err.Error())
-			}
-			// replace writer
-			writer := newCachedWriter(store, expire, c.Writer, key)
-			c.Writer = writer
-			handle(c)
+func cachePage(store persistence.CacheStore, expire time.Duration, handle gin.HandlerFunc, c *gin.Context, revalidate bool) {
+	var cache responseCache
+	url := c.Request.URL
+	key := CreateKey(url.RequestURI())
 
-			// Drop caches of aborted contexts
-			if c.IsAborted() {
-				store.Delete(key)
-			}
-		} else {
-			c.Writer.WriteHeader(cache.Status)
-			for k, vals := range cache.Header {
-				for _, v := range vals {
-					c.Writer.Header().Set(k, v)
-				}
-			}
-			c.Writer.Write(cache.Data)
+	if revalidate {
+		store.Delete(key)
+	}
+
+	if err := store.Get(key, &cache); err != nil {
+		if err != persistence.ErrCacheMiss {
+			log.Println(err.Error())
 		}
+		if revalidate {
+			store.Delete(key)
+		}
+		// replace writer
+		writer := newCachedWriter(store, expire, c.Writer, key)
+		c.Writer = writer
+		handle(c)
+
+		// Drop caches of aborted contexts
+		if c.IsAborted() {
+			store.Delete(key)
+		}
+	} else {
+		c.Writer.WriteHeader(cache.Status)
+		for k, vals := range cache.Header {
+			for _, v := range vals {
+				c.Writer.Header().Set(k, v)
+			}
+		}
+		c.Writer.Write(cache.Data)
+	}
 }
 
 // CachePage Decorator with expire date as a function
-func CachePageWithDurationFn(store persistence.CacheStore, expireFn func(c *gin.Context) time.Duration, handle gin.HandlerFunc) gin.HandlerFunc {
+func CachePageWithDurationFn(store persistence.CacheStore, expireFn func(c *gin.Context) time.Duration, revalidateFn func(c *gin.Context) bool, handle gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		expire := expireFn(c)
-		cachePage(store, expire, handle, c)
+		revalidate := revalidateFn(c)
+		cachePage(store, expire, handle, c, revalidate)
 	}
 }
 
 // CachePage Decorator
 func CachePage(store persistence.CacheStore, expire time.Duration, handle gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		cachePage(store, expire, handle, c)
+		cachePage(store, expire, handle, c, false)
 	}
 }
 
